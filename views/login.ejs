@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Downlodip — Login</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body class="lander-page">
+  <div class="lander-container">
+    <div class="lander-card">
+      <div class="lander-icon">🔒</div>
+      <h1>Admin Login</h1>
+      <% if (error) { %>
+        <div class="alert-error"><%= error %></div>
+      <% } %>
+      <form method="POST" action="/admin/login" style="display:flex;flex-direction:column;gap:14px;margin-top:20px;">
+        <input type="password" name="secret" placeholder="Enter admin password" autofocus/>
+        <button type="submit" class="btn-primary btn-large">Login</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

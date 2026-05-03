@@ -10,63 +10,49 @@
 
 <div class="admin-container">
   <header class="admin-header">
-    <h1>Downlodip <span>Admin</span></h1>
-    <p>Manage device-agnostic link campaigns</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h1>Downlodip <span>Admin</span></h1>
+        <p>Device-agnostic link manager</p>
+      </div>
+      <a href="/admin/logout" class="btn-danger" style="text-decoration:none;">Logout</a>
+    </div>
   </header>
 
-  <!-- Secret input -->
-  <div class="card" id="auth-card">
-    <label>Admin Secret</label>
-    <div class="input-row">
-      <input type="password" id="admin-secret" placeholder="Enter your admin secret" value="<%= secret %>"/>
-      <button onclick="loadCampaigns()">Load Campaigns</button>
-    </div>
-  </div>
-
-  <!-- Create Campaign -->
+  <!-- ── Quick Link Creator ── -->
   <div class="card">
-    <h2>New Campaign</h2>
+    <h2>➕ Create Shareable Link</h2>
+    <p class="muted" style="margin-bottom:18px;">Paste any URL and give it a name. Anyone who visits the generated link will be redirected to your URL — with their own IP, so IP-locked links work for everyone.</p>
     <div class="form-grid">
       <div class="field">
-        <label>Campaign Name</label>
-        <input type="text" id="f-name" placeholder="e.g. Movie Download April"/>
+        <label>Link Name</label>
+        <input type="text" id="q-name" placeholder="e.g. Call of Duty Download"/>
       </div>
       <div class="field">
-        <label>Resolver Type</label>
-        <select id="f-type" onchange="updateResolverHelp()">
-          <option value="url_template">URL Template</option>
-          <option value="api_fetch">API Fetch</option>
-          <option value="regex_scrape">Regex Scrape</option>
-          <option value="static">Static URL</option>
-        </select>
-      </div>
-      <div class="field full">
-        <label>Resolver Config <span id="resolver-hint" class="hint"></span></label>
-        <textarea id="f-config" rows="4" placeholder="{}"></textarea>
+        <label>Destination URL</label>
+        <input type="text" id="q-url" placeholder="https://romsfun.com/download/..."/>
       </div>
       <div class="field full">
         <label class="checkbox-label">
-          <input type="checkbox" id="f-lander"/> Show lander page (user clicks button to get link)
+          <input type="checkbox" id="q-lander"/> Show a lander page (user clicks a button to continue — recommended for ad pages)
         </label>
       </div>
-      <div id="lander-fields" style="display:none" class="field full sub-grid">
-        <div class="field">
-          <label>Lander Title</label>
-          <input type="text" id="f-lander-title" placeholder="Download Now"/>
-        </div>
-        <div class="field">
-          <label>Lander Description</label>
-          <input type="text" id="f-lander-desc" placeholder="Click the button below to get your download link."/>
-        </div>
+    </div>
+    <button class="btn-primary" onclick="quickCreate()">Generate Link</button>
+
+    <div id="quick-result" class="quick-result hidden">
+      <p class="muted" style="margin-bottom:8px;">Your shareable link:</p>
+      <div class="result-link-row">
+        <span id="quick-link-url"></span>
+        <button class="btn-ghost" onclick="copyQuickLink()">Copy</button>
       </div>
     </div>
-    <button class="btn-primary" onclick="createCampaign()">Create Campaign</button>
   </div>
 
-  <!-- Campaigns list -->
+  <!-- ── All Links ── -->
   <div class="card">
-    <h2>Campaigns</h2>
-    <div id="campaigns-list"><p class="muted">Load campaigns above to see them here.</p></div>
+    <h2>All Links</h2>
+    <div id="campaigns-list"><p class="muted">Loading...</p></div>
   </div>
 
   <!-- Stats modal -->
