@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
@@ -14,10 +15,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Trust one proxy hop (e.g. nginx/Cloudflare). Adjust to match your deployment.
 app.set('trust proxy', 1);
 
-// Rate limit the redirect endpoint to prevent abuse
 const redirectLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -37,7 +36,6 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// ── Main redirect endpoint ──────────────────────────────────────────────────
 app.get('/r/:slug', redirectLimiter, async (req, res) => {
   const { slug } = req.params;
   const campaign = db.getCampaign(slug);
@@ -45,28 +43,22 @@ app.get('/r/:slug', redirectLimiter, async (req, res) => {
   if (!campaign) return res.status(404).render('404');
 
   const ip = getClientIp(req);
-
-  // Log the visit
   db.logVisit(campaign.id, ip, req.headers['user-agent'] || '');
 
-  // If campaign has a lander page, show it (user clicks button → gets link)
   if (campaign.use_lander) {
     return res.render('lander', { campaign, slug });
   }
 
-  // Otherwise resolve immediately and redirect
   try {
     const resolvedUrl = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, resolvedUrl);
     return res.redirect(302, resolvedUrl);
   } catch (err) {
     console.error('Resolution failed:', err.message);
-    // Fall back to lander with error so user can retry
     return res.render('lander', { campaign, slug, error: 'Link generation failed, please try again.' });
   }
 });
 
-// ── AJAX endpoint called from lander page ──────────────────────────────────
 app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   const { slug } = req.params;
   const campaign = db.getCampaign(slug);
@@ -84,7 +76,6 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   }
 });
 
-// ── Admin API ───────────────────────────────────────────────────────────────
 app.get('/admin', (req, res) => {
   res.render('admin', { secret: ADMIN_SECRET });
 });

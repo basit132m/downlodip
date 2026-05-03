@@ -37,14 +37,11 @@
   async function getLink() {
     const btn = document.getElementById('get-link-btn');
     const area = document.getElementById('link-area');
-
     btn.disabled = true;
     btn.textContent = 'Generating link…';
-
     try {
       const res = await fetch(`/r/${SLUG}/resolve`, { method: 'POST' });
       const data = await res.json();
-
       if (data.url) {
         area.innerHTML = `
           <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
@@ -52,7 +49,6 @@
           </a>
           <p class="link-url">${escapeHtml(data.url)}</p>
         `;
-        // Auto-open the link
         window.open(data.url, '_blank', 'noopener,noreferrer');
       } else {
         throw new Error(data.error || 'Unknown error');

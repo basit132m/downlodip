@@ -1,5 +1,3 @@
-/* ── Admin Panel JS ───────────────────────────────────────────────────────── */
-
 const RESOLVER_HINTS = {
   url_template: `{"template":"https://example.com/dl?ip={ip}&token=YOUR_TOKEN"}`,
   api_fetch: `{"url":"https://api.example.com/link","method":"POST","ip_field":"user_ip","response_field":"download_url"}`,
@@ -9,10 +7,8 @@ const RESOLVER_HINTS = {
 
 function updateResolverHelp() {
   const type = document.getElementById('f-type').value;
-  const hint = document.getElementById('resolver-hint');
-  const config = document.getElementById('f-config');
-  hint.textContent = '— example config shown as placeholder';
-  config.placeholder = RESOLVER_HINTS[type] || '{}';
+  document.getElementById('resolver-hint').textContent = '— example config shown as placeholder';
+  document.getElementById('f-config').placeholder = RESOLVER_HINTS[type] || '{}';
 }
 
 document.getElementById('f-lander').addEventListener('change', function () {
@@ -21,68 +17,40 @@ document.getElementById('f-lander').addEventListener('change', function () {
 
 updateResolverHelp();
 
-function secret() {
-  return document.getElementById('admin-secret').value.trim();
-}
-
-function headers() {
-  return { 'Content-Type': 'application/json', 'x-admin-secret': secret() };
-}
+function secret() { return document.getElementById('admin-secret').value.trim(); }
+function headers() { return { 'Content-Type': 'application/json', 'x-admin-secret': secret() }; }
 
 async function loadCampaigns() {
   const res = await fetch('/admin/api/campaigns', { headers: headers() });
   if (!res.ok) { alert('Wrong secret or server error'); return; }
-  const campaigns = await res.json();
-  renderCampaigns(campaigns);
+  renderCampaigns(await res.json());
 }
 
 function renderCampaigns(campaigns) {
   const el = document.getElementById('campaigns-list');
-  if (!campaigns.length) {
-    el.innerHTML = '<p class="muted">No campaigns yet. Create one above.</p>';
-    return;
-  }
-
+  if (!campaigns.length) { el.innerHTML = '<p class="muted">No campaigns yet. Create one above.</p>'; return; }
   const rows = campaigns.map(c => {
     const link = `${location.origin}/r/${c.slug}`;
-    const tag = tagForType(c.resolver_type);
-    return `
-      <tr>
-        <td><strong>${esc(c.name)}</strong></td>
-        <td><span class="slug-badge">${esc(c.slug)}</span></td>
-        <td>${tag}</td>
-        <td>${c.use_lander ? '<span class="tag tag-green">Lander</span>' : '<span class="tag tag-gray">Direct</span>'}</td>
-        <td>
-          <span class="copy-link" onclick="copyLink('${esc(link)}')" title="Click to copy">${esc(link)}</span>
-        </td>
-        <td>
-          <div class="actions">
-            <button class="btn-ghost" onclick="showStats(${c.id}, '${esc(c.name)}')">Stats</button>
-            <button class="btn-danger" onclick="deleteCampaign(${c.id})">Delete</button>
-          </div>
-        </td>
-      </tr>`;
+    return `<tr>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td><span class="slug-badge">${esc(c.slug)}</span></td>
+      <td>${tagForType(c.resolver_type)}</td>
+      <td>${c.use_lander ? '<span class="tag tag-green">Lander</span>' : '<span class="tag tag-gray">Direct</span>'}</td>
+      <td><span class="copy-link" onclick="copyLink('${esc(link)}')" title="Click to copy">${esc(link)}</span></td>
+      <td><div class="actions">
+        <button class="btn-ghost" onclick="showStats(${c.id}, '${esc(c.name)}')">Stats</button>
+        <button class="btn-danger" onclick="deleteCampaign(${c.id})">Delete</button>
+      </div></td>
+    </tr>`;
   }).join('');
-
-  el.innerHTML = `
-    <table class="campaign-table">
-      <thead>
-        <tr>
-          <th>Name</th><th>Slug</th><th>Type</th><th>Mode</th><th>Link</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  el.innerHTML = `<table class="campaign-table"><thead><tr><th>Name</th><th>Slug</th><th>Type</th><th>Mode</th><th>Link</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function tagForType(type) {
-  const map = {
-    url_template: '<span class="tag tag-blue">URL Template</span>',
-    api_fetch: '<span class="tag tag-yellow">API Fetch</span>',
-    regex_scrape: '<span class="tag tag-yellow">Regex Scrape</span>',
-    static: '<span class="tag tag-gray">Static</span>',
-  };
-  return map[type] || `<span class="tag tag-gray">${esc(type)}</span>`;
+  const map = { url_template: 'tag-blue', api_fetch: 'tag-yellow', regex_scrape: 'tag-yellow', static: 'tag-gray' };
+  const cls = map[type] || 'tag-gray';
+  const label = { url_template: 'URL Template', api_fetch: 'API Fetch', regex_scrape: 'Regex Scrape', static: 'Static' };
+  return `<span class="tag ${cls}">${label[type] || esc(type)}</span>`;
 }
 
 async function createCampaign() {
@@ -92,37 +60,18 @@ async function createCampaign() {
   const use_lander = document.getElementById('f-lander').checked;
   const lander_title = document.getElementById('f-lander-title').value.trim();
   const lander_description = document.getElementById('f-lander-desc').value.trim();
-
   if (!name) { alert('Campaign name is required'); return; }
   if (!configRaw) { alert('Resolver config is required'); return; }
-
-  let resolver_config;
-  try {
-    JSON.parse(configRaw);
-    resolver_config = configRaw;
-  } catch {
-    alert('Resolver config must be valid JSON');
-    return;
-  }
-
+  try { JSON.parse(configRaw); } catch { alert('Resolver config must be valid JSON'); return; }
   const res = await fetch('/admin/api/campaigns', {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({ name, resolver_type, resolver_config, use_lander, lander_title, lander_description }),
+    method: 'POST', headers: headers(),
+    body: JSON.stringify({ name, resolver_type, resolver_config: configRaw, use_lander, lander_title, lander_description }),
   });
-
-  if (!res.ok) {
-    const err = await res.json();
-    alert(err.error || 'Failed to create campaign');
-    return;
-  }
-
-  // Reset form
+  if (!res.ok) { alert((await res.json()).error || 'Failed'); return; }
   document.getElementById('f-name').value = '';
   document.getElementById('f-config').value = '';
   document.getElementById('f-lander').checked = false;
   document.getElementById('lander-fields').style.display = 'none';
-
   loadCampaigns();
 }
 
@@ -133,35 +82,20 @@ async function deleteCampaign(id) {
 }
 
 async function showStats(id, name) {
-  const res = await fetch(`/admin/api/campaigns/${id}/stats`, { headers: headers() });
-  const stats = await res.json();
-
+  const stats = await (await fetch(`/admin/api/campaigns/${id}/stats`, { headers: headers() })).json();
   document.getElementById('stats-title').textContent = `Stats — ${name}`;
-  const rows = stats.recent.map(v => `
-    <tr>
-      <td>${esc(v.ip)}</td>
-      <td>${esc(v.resolved_url || '—')}</td>
-      <td>${esc(v.visited_at)}</td>
-    </tr>`).join('');
-
+  const rows = stats.recent.map(v => `<tr><td>${esc(v.ip)}</td><td>${esc(v.resolved_url || '—')}</td><td>${esc(v.visited_at)}</td></tr>`).join('');
   document.getElementById('stats-content').innerHTML = `
     <div class="stats-numbers">
       <div class="stat-box"><div class="val">${stats.total}</div><div class="lbl">Total Visits</div></div>
       <div class="stat-box"><div class="val">${stats.resolved}</div><div class="lbl">Links Resolved</div></div>
       <div class="stat-box"><div class="val">${stats.total ? Math.round(stats.resolved/stats.total*100) : 0}%</div><div class="lbl">Success Rate</div></div>
     </div>
-    ${rows ? `<table class="visit-table">
-      <thead><tr><th>IP</th><th>Resolved URL</th><th>Time</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>` : '<p class="muted">No visits yet.</p>'}
-  `;
-
+    ${rows ? `<table class="visit-table"><thead><tr><th>IP</th><th>Resolved URL</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No visits yet.</p>'}`;
   document.getElementById('stats-modal').classList.remove('hidden');
 }
 
-function closeStats() {
-  document.getElementById('stats-modal').classList.add('hidden');
-}
+function closeStats() { document.getElementById('stats-modal').classList.add('hidden'); }
 
 function copyLink(url) {
   navigator.clipboard.writeText(url).then(() => {
@@ -171,16 +105,8 @@ function copyLink(url) {
 }
 
 function esc(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Close modal on backdrop click
-document.getElementById('stats-modal').addEventListener('click', function (e) {
-  if (e.target === this) closeStats();
-});
-
+document.getElementById('stats-modal').addEventListener('click', function(e) { if (e.target === this) closeStats(); });
 loadCampaigns();

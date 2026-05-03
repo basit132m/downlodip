@@ -45,7 +45,6 @@ function persist() {
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-// run() returns the last inserted rowid (read before export resets it)
 function run(sql, params = []) {
   db.run(sql, params);
   const rowid = getLastRowid();
@@ -77,8 +76,6 @@ function all(sql, params = []) {
   stmt.free();
   return results;
 }
-
-// ── Public API ──────────────────────────────────────────────────────────────
 
 function createCampaign(data) {
   const slug = nanoid(8);
