@@ -82,15 +82,10 @@ async function resolveViaFlareSolverr(pageUrl, ip) {
 
   console.log(`[FlareSolverr] Extracted post_id=${postId}, _wp_http_referer=${wpReferer}`);
 
-  // Step 3: Check if the fresh token was already injected into the page HTML
-  // (some pages render the token server-side after JS execution)
-  const tokenInPage = scrapeDownloadUrl(html);
-  if (tokenInPage) {
-    console.log(`[FlareSolverr] Found token URL in page HTML: ${tokenInPage}`);
-    return { url: tokenInPage, cookies, userAgent };
-  }
-
-  // Step 4: POST to admin-ajax.php using the FlareSolverr session cookies
+  // Step 3: POST to admin-ajax.php using the FlareSolverr session cookies
+  // NOTE: Do NOT scrape the HTML for a token — the HTML always contains a stale/cached
+  // token that is IP-locked to a previous visitor. The fresh token only comes from the
+  // admin-ajax.php XHR response.
   const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
   const postBody = new URLSearchParams({ action: 'k_get_download' });
   if (postId) postBody.set('post_id', postId);
@@ -129,7 +124,8 @@ async function resolveViaFlareSolverr(pageUrl, ip) {
     }
   }
 
-  console.warn('[FlareSolverr] Could not extract a download URL from admin-ajax.php response');
+  // admin-ajax.php returned something but no URL could be extracted (likely "Invalid download URL format")
+  console.warn('[FlareSolverr] admin-ajax.php gave no usable URL — server IP is likely blocked by this site');
   return null;
 }
 
