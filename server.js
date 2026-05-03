@@ -143,19 +143,6 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   try {
     const result = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, result.url);
-
-    // If we resolved a direct file URL (token URL different from source), proxy it
-    const config = (() => {
-      try { return typeof campaign.resolver_config === 'string' ? JSON.parse(campaign.resolver_config) : campaign.resolver_config; } catch { return {}; }
-    })();
-    const isProxyable = campaign.resolver_type === 'follow_redirect' && config.url && result.url !== config.url;
-
-    if (isProxyable && result.cookies && result.cookies.length > 0) {
-      // Encode cookies and UA into a proxy URL so the lander can stream the file
-      const proxyUrl = `/proxy?u=${encodeURIComponent(result.url)}&ck=${encodeURIComponent(JSON.stringify(result.cookies))}&ua=${encodeURIComponent(result.userAgent || '')}`;
-      return res.json({ url: proxyUrl, proxy: true });
-    }
-
     return res.json({ url: result.url });
   } catch (err) {
     console.error('Resolution failed:', err.message);

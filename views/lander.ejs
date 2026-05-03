@@ -27,7 +27,7 @@
       </button>
     </div>
 
-    <p class="lander-note">Your download link will be generated for your connection.</p>
+    <p class="lander-note">Click the button above to get your personal download link.</p>
   </div>
 </div>
 
@@ -46,21 +46,38 @@
       const data = await res.json();
 
       if (data.url) {
-        if (data.proxy) {
-          // Server resolved a direct file URL — offer immediate download via proxy
-          area.innerHTML = `
-            <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}">
-              ⬇ Download Now
+        // Open the download page immediately in a new tab
+        const win = window.open(data.url, '_blank', 'noopener');
+
+        area.innerHTML = `
+          <div style="text-align:center;">
+            <p style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">
+              ✅ Your download page is opening in a new tab!
+            </p>
+            <p class="lander-note">
+              Wait for the countdown on that page (about 7 seconds),<br>
+              then click the <strong>Download</strong> button that appears.
+            </p>
+            <a class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener" style="margin-top:16px;display:inline-block;">
+              Open Download Page Again
             </a>
-            <p class="lander-note" style="margin-top:14px;">Your personalized download link is ready.</p>
-          `;
-        } else {
-          // Fallback: send user to the source page so their browser generates the token
+          </div>
+        `;
+
+        // If popup was blocked, show a prominent manual link
+        if (!win || win.closed) {
           area.innerHTML = `
-            <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
-              ⬇ Go to Download Page
-            </a>
-            <p class="lander-note" style="margin-top:14px;">A download link will be generated automatically for your connection on the next page.</p>
+            <div style="text-align:center;">
+              <p class="alert-error" style="margin-bottom:12px;">
+                Your browser blocked the popup. Click the button below to open the download page.
+              </p>
+              <a class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
+                ⬇ Open Download Page
+              </a>
+              <p class="lander-note" style="margin-top:14px;">
+                Wait for the 7-second countdown, then click the Download button.
+              </p>
+            </div>
           `;
         }
       } else {
