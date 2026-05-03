@@ -1,7 +1,15 @@
+document.querySelectorAll('.mode-option input').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('.mode-option').forEach(el => el.classList.remove('selected'));
+    radio.closest('.mode-option').classList.add('selected');
+  });
+});
+
 async function quickCreate() {
   const name = document.getElementById('q-name').value.trim();
   const url  = document.getElementById('q-url').value.trim();
   const use_lander = document.getElementById('q-lander').checked;
+  const resolver_type = document.querySelector('input[name="mode"]:checked').value;
 
   if (!name) { alert('Please enter a link name'); return; }
   if (!url)  { alert('Please enter a destination URL'); return; }
@@ -12,7 +20,7 @@ async function quickCreate() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name,
-      resolver_type: 'static',
+      resolver_type,
       resolver_config: JSON.stringify({ url }),
       use_lander,
       lander_title: name,
@@ -20,11 +28,7 @@ async function quickCreate() {
     }),
   });
 
-  if (!res.ok) {
-    const err = await res.json();
-    alert(err.error || 'Failed to create link');
-    return;
-  }
+  if (!res.ok) { alert((await res.json()).error || 'Failed to create link'); return; }
 
   const campaign = await res.json();
   const shareLink = `${location.origin}/r/${campaign.slug}`;
@@ -59,11 +63,14 @@ function renderCampaigns(campaigns) {
 
   const rows = campaigns.map(c => {
     const link = `${location.origin}/r/${c.slug}`;
+    const modeTag = c.resolver_type === 'follow_redirect'
+      ? '<span class="tag tag-blue">Smart</span>'
+      : '<span class="tag tag-gray">Direct</span>';
     return `<tr>
       <td><strong>${esc(c.name)}</strong></td>
       <td><span class="slug-badge">${esc(c.slug)}</span></td>
-      <td class="dest-url">${esc(destUrl(c))}</td>
-      <td>${c.use_lander ? '<span class="tag tag-green">Lander</span>' : '<span class="tag tag-gray">Direct</span>'}</td>
+      <td class="dest-url" title="${esc(destUrl(c))}">${esc(destUrl(c))}</td>
+      <td>${modeTag}</td>
       <td><span class="copy-link" onclick="copyText('${esc(link)}')" title="Click to copy">${esc(link)}</span></td>
       <td><div class="actions">
         <button class="btn-ghost" onclick="showStats(${c.id}, '${esc(c.name)}')">Stats</button>
@@ -92,13 +99,17 @@ async function deleteCampaign(id) {
 async function showStats(id, name) {
   const stats = await (await fetch(`/admin/api/campaigns/${id}/stats`)).json();
   document.getElementById('stats-title').textContent = `Stats — ${name}`;
-  const rows = stats.recent.map(v => `<tr><td>${esc(v.ip)}</td><td>${esc(v.resolved_url || '—')}</td><td>${esc(v.visited_at)}</td></tr>`).join('');
+  const rows = stats.recent.map(v => `<tr>
+    <td>${esc(v.ip)}</td>
+    <td>${esc(v.resolved_url || '—')}</td>
+    <td>${esc(v.visited_at)}</td>
+  </tr>`).join('');
   document.getElementById('stats-content').innerHTML = `
     <div class="stats-numbers">
       <div class="stat-box"><div class="val">${stats.total}</div><div class="lbl">Total Visits</div></div>
       <div class="stat-box"><div class="val">${stats.resolved}</div><div class="lbl">Redirected</div></div>
     </div>
-    ${rows ? `<table class="visit-table"><thead><tr><th>IP</th><th>Destination</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No visits yet.</p>'}`;
+    ${rows ? `<table class="visit-table"><thead><tr><th>IP</th><th>Resolved URL</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No visits yet.</p>'}`;
   document.getElementById('stats-modal').classList.remove('hidden');
 }
 

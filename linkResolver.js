@@ -1,4 +1,7 @@
 const axios = require('axios');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 
 async function resolveLink(campaign, ip) {
   let config;
@@ -11,6 +14,8 @@ async function resolveLink(campaign, ip) {
   }
 
   switch (campaign.resolver_type) {
+    case 'follow_redirect':
+      return resolveFollowRedirect(config, ip);
     case 'url_template':
       return resolveUrlTemplate(config, ip);
     case 'api_fetch':
@@ -23,6 +28,56 @@ async function resolveLink(campaign, ip) {
     default:
       throw new Error(`Unknown resolver_type: ${campaign.resolver_type}`);
   }
+}
+
+async function resolveFollowRedirect(config, ip) {
+  if (!config.url) throw new Error('follow_redirect resolver requires config.url');
+
+  const MAX_REDIRECTS = 12;
+  let currentUrl = config.url;
+
+  for (let i = 0; i < MAX_REDIRECTS; i++) {
+    const parsed = new URL(currentUrl);
+    const client = parsed.protocol === 'https:' ? https : http;
+
+    const location = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: parsed.hostname,
+        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        path: parsed.pathname + parsed.search,
+        method: 'GET',
+        headers: {
+          'X-Forwarded-For': ip,
+          'X-Real-IP': ip,
+          'CF-Connecting-IP': ip,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': `${parsed.protocol}//${parsed.hostname}/`,
+        },
+      };
+
+      const req = client.request(options, (res) => {
+        res.resume();
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const loc = res.headers.location;
+          const next = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href;
+          resolve(next);
+        } else {
+          resolve(null);
+        }
+      });
+
+      req.on('error', reject);
+      req.setTimeout(12000, () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.end();
+    });
+
+    if (!location) break;
+    currentUrl = location;
+  }
+
+  return currentUrl;
 }
 
 function resolveUrlTemplate(config, ip) {

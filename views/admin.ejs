@@ -21,7 +21,7 @@
 
   <div class="card">
     <h2>➕ Create Shareable Link</h2>
-    <p class="muted" style="margin-bottom:18px;">Paste any URL and give it a name. Anyone who visits the generated link will be redirected to your URL — with their own IP, so IP-locked links work for everyone.</p>
+    <p class="muted" style="margin-bottom:18px;">Paste a URL, give it a name, choose the mode, and get a shareable link.</p>
     <div class="form-grid">
       <div class="field">
         <label>Link Name</label>
@@ -29,11 +29,32 @@
       </div>
       <div class="field">
         <label>Destination URL</label>
-        <input type="text" id="q-url" placeholder="https://romsfun.com/download/..."/>
+        <input type="text" id="q-url" placeholder="https://romsfun.com/download/.../1"/>
+      </div>
+      <div class="field full">
+        <label>Mode</label>
+        <div class="mode-selector">
+          <label class="mode-option selected" id="mode-smart">
+            <input type="radio" name="mode" value="follow_redirect" checked/>
+            <div class="mode-icon">🧠</div>
+            <div>
+              <strong>Smart Redirect</strong>
+              <p>Server visits the URL with visitor's IP — generates an IP-specific download token for them. Use this for romsfun and similar sites.</p>
+            </div>
+          </label>
+          <label class="mode-option" id="mode-direct">
+            <input type="radio" name="mode" value="static"/>
+            <div class="mode-icon">↗</div>
+            <div>
+              <strong>Direct Redirect</strong>
+              <p>Simply redirects the visitor to the URL. Use for links that don't need IP-based tokens.</p>
+            </div>
+          </label>
+        </div>
       </div>
       <div class="field full">
         <label class="checkbox-label">
-          <input type="checkbox" id="q-lander"/> Show a lander page (user clicks a button to continue — recommended for ad pages)
+          <input type="checkbox" id="q-lander"/> Show a lander page (visitor clicks a button to get the link)
         </label>
       </div>
     </div>
