@@ -27,59 +27,81 @@
       </button>
     </div>
 
-    <p class="lander-note">Click the button above to get your personal download link.</p>
+    <p class="lander-note">Your personal download link will be generated instantly.</p>
   </div>
 </div>
 
 <script>
   const SLUG = '<%= slug %>';
+  const SOURCE_URL = <%- JSON.stringify(typeof sourceUrl !== 'undefined' ? sourceUrl : null) %>;
+
+  // Extract post_id from a romsfun-style URL: /download/slug-POSTID/1
+  function extractPostId(url) {
+    if (!url) return null;
+    const m = url.match(/\/(\d+)(?:\/\d+)?(?:\?.*)?$/);
+    return m ? m[1] : null;
+  }
+
+  // Try calling admin-ajax.php directly from the user's browser.
+  // Since the request originates from the user's real IP, the site generates
+  // a fresh IP-specific token. If CORS allows reading the response, we get
+  // the direct download URL — no ads, no PPI redirect.
+  async function tryBrowserSideToken(sourceUrl) {
+    try {
+      const parsed = new URL(sourceUrl);
+      const ajaxUrl = `${parsed.protocol}//${parsed.host}/wp-admin/admin-ajax.php`;
+      const postId = extractPostId(sourceUrl);
+      const body = new URLSearchParams({ action: 'k_get_download' });
+      if (postId) body.set('post_id', postId);
+      body.set('_wp_http_referer', parsed.pathname);
+
+      const resp = await fetch(ajaxUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body: body.toString(),
+        credentials: 'omit',
+      });
+
+      if (!resp.ok) return null;
+      const text = await resp.text();
+
+      // Extract direct file download URL from the response HTML
+      const match = text.match(/https?:\/\/[^\s"'<>]+\.(?:zip|iso|rar|7z|exe|pkg|xci|nsp|apk|bin|img)(?:\?[^\s"'<>]*)?/i);
+      return match ? match[0].replace(/['">\s]+$/, '') : null;
+    } catch (e) {
+      // CORS blocked or network error — expected, fall through to server resolve
+      return null;
+    }
+  }
 
   async function getLink() {
     const btn = document.getElementById('get-link-btn');
     const area = document.getElementById('link-area');
 
     btn.disabled = true;
-    btn.textContent = 'Loading…';
+    btn.textContent = 'Generating link…';
 
+    // Step 1: if we have the source URL, try getting the token directly from
+    // the user's browser. This bypasses PPI ad redirects entirely.
+    if (SOURCE_URL) {
+      const directUrl = await tryBrowserSideToken(SOURCE_URL);
+      if (directUrl) {
+        showDownloadReady(area, directUrl, true);
+        // Also log the resolve on our server silently
+        fetch(`/r/${SLUG}/resolve`, { method: 'POST' }).catch(() => {});
+        return;
+      }
+    }
+
+    // Step 2: ask our server (records analytics, returns source URL as fallback)
     try {
       const res = await fetch(`/r/${SLUG}/resolve`, { method: 'POST' });
       const data = await res.json();
 
       if (data.url) {
-        // Open the download page immediately in a new tab
+        // Open the download page in a new tab — user will go through the site normally
         const win = window.open(data.url, '_blank', 'noopener');
-
-        area.innerHTML = `
-          <div style="text-align:center;">
-            <p style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">
-              ✅ Your download page is opening in a new tab!
-            </p>
-            <p class="lander-note">
-              Wait for the countdown on that page (about 7 seconds),<br>
-              then click the <strong>Download</strong> button that appears.
-            </p>
-            <a class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener" style="margin-top:16px;display:inline-block;">
-              Open Download Page Again
-            </a>
-          </div>
-        `;
-
-        // If popup was blocked, show a prominent manual link
-        if (!win || win.closed) {
-          area.innerHTML = `
-            <div style="text-align:center;">
-              <p class="alert-error" style="margin-bottom:12px;">
-                Your browser blocked the popup. Click the button below to open the download page.
-              </p>
-              <a class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
-                ⬇ Open Download Page
-              </a>
-              <p class="lander-note" style="margin-top:14px;">
-                Wait for the 7-second countdown, then click the Download button.
-              </p>
-            </div>
-          `;
-        }
+        showOpenedInTab(area, data.url, win);
       } else {
         throw new Error(data.error || 'Unknown error');
       }
@@ -89,6 +111,35 @@
         <button class="btn-primary btn-large" onclick="location.reload()">Try Again</button>
       `;
     }
+  }
+
+  function showDownloadReady(area, url, direct) {
+    area.innerHTML = `
+      <div style="text-align:center;">
+        <p style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">
+          ✅ Your download link is ready!
+        </p>
+        <a class="btn-primary btn-large" href="${escapeHtml(url)}" ${direct ? '' : 'target="_blank" rel="noopener"'}>
+          ⬇ Download Now
+        </a>
+      </div>
+    `;
+  }
+
+  function showOpenedInTab(area, url, win) {
+    const blocked = !win || win.closed;
+    area.innerHTML = `
+      <div style="text-align:center;">
+        ${blocked
+          ? `<p class="alert-error" style="margin-bottom:12px;">Popup blocked — click below to open the download page.</p>`
+          : `<p style="font-size:1.1rem;font-weight:600;margin-bottom:12px;">✅ Download page opened in a new tab!</p>
+             <p class="lander-note">Wait for the countdown (~7 sec) then click Download.</p>`
+        }
+        <a class="btn-primary btn-large" href="${escapeHtml(url)}" target="_blank" rel="noopener" style="margin-top:12px;display:inline-block;">
+          ${blocked ? '⬇ Open Download Page' : 'Open Again'}
+        </a>
+      </div>
+    `;
   }
 
   function escapeHtml(str) {

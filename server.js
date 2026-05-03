@@ -56,7 +56,11 @@ app.get('/r/:slug', redirectLimiter, async (req, res) => {
   db.logVisit(campaign.id, ip, req.headers['user-agent'] || '');
 
   if (campaign.use_lander) {
-    return res.render('lander', { campaign, slug });
+    let sourceUrl = null;
+    if (campaign.resolver_type === 'follow_redirect') {
+      try { sourceUrl = JSON.parse(campaign.resolver_config).url || null; } catch {}
+    }
+    return res.render('lander', { campaign, slug, sourceUrl });
   }
 
   try {
