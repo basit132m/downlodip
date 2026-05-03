@@ -46,12 +46,23 @@
       const data = await res.json();
 
       if (data.url) {
-        area.innerHTML = `
-          <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
-            ⬇ Go to Download Page
-          </a>
-          <p class="lander-note" style="margin-top:14px;">A download link will be generated automatically for your connection on the next page.</p>
-        `;
+        if (data.proxy) {
+          // Server resolved a direct file URL — offer immediate download via proxy
+          area.innerHTML = `
+            <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}">
+              ⬇ Download Now
+            </a>
+            <p class="lander-note" style="margin-top:14px;">Your personalized download link is ready.</p>
+          `;
+        } else {
+          // Fallback: send user to the source page so their browser generates the token
+          area.innerHTML = `
+            <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
+              ⬇ Go to Download Page
+            </a>
+            <p class="lander-note" style="margin-top:14px;">A download link will be generated automatically for your connection on the next page.</p>
+          `;
+        }
       } else {
         throw new Error(data.error || 'Unknown error');
       }

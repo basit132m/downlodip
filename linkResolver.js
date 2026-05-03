@@ -28,16 +28,109 @@ async function resolveLink(campaign, ip) {
 
 /**
  * follow_redirect:
- * Uses FlareSolverr to fetch the page through a real stealth browser,
- * bypassing Cloudflare. Then scrapes the download URL from the HTML.
- * Falls back to plain HTTP redirect-following if FlareSolverr fails.
+ * 1. Uses FlareSolverr to load the download page and get session cookies + hidden fields.
+ * 2. POSTs to admin-ajax.php (same session) with action=k_get_download + hidden fields.
+ * 3. If a token URL is returned, redirects user there.
+ * 4. Falls back to returning the source URL so the user's own browser generates the token.
  */
 async function resolveFollowRedirect(config, ip) {
   if (!config.url) throw new Error('follow_redirect resolver requires config.url');
-  // Return the source URL directly — the user's own browser will generate
-  // an IP-specific token when they visit the page (server-side generation is
-  // blocked by the target site for datacenter IPs).
+
+  // Try server-side token generation via FlareSolverr session
+  try {
+    const result = await resolveViaFlareSolverr(config.url, ip);
+    if (result) return result;
+  } catch (err) {
+    console.warn('[follow_redirect] FlareSolverr attempt failed:', err.message);
+  }
+
+  // Fallback: send the user to the source URL; their browser will generate the token
+  console.log('[follow_redirect] Falling back to direct redirect for user-side token generation');
   return { url: config.url, cookies: [], userAgent: null };
+}
+
+async function resolveViaFlareSolverr(pageUrl, ip) {
+  const parsedPage = new URL(pageUrl);
+  const ajaxUrl = `${parsedPage.protocol}//${parsedPage.host}/wp-admin/admin-ajax.php`;
+
+  // Step 1: Load the page through FlareSolverr to get cf_clearance + page HTML
+  console.log(`[FlareSolverr] Loading page: ${pageUrl}`);
+  const pageResp = await axios.post(FLARESOLVERR, {
+    cmd: 'request.get',
+    url: pageUrl,
+    maxTimeout: 30000,
+  }, { timeout: 35000 });
+
+  if (pageResp.data.status !== 'ok') {
+    throw new Error(`FlareSolverr page load failed: ${pageResp.data.message}`);
+  }
+
+  const html = pageResp.data.solution.response;
+  const cookies = pageResp.data.solution.cookies || [];
+  const userAgent = pageResp.data.solution.userAgent;
+
+  console.log(`[FlareSolverr] Got ${cookies.length} cookies, UA: ${userAgent ? userAgent.slice(0, 40) : 'none'}`);
+
+  // Step 2: Extract hidden fields from the page HTML
+  const postIdMatch = html.match(/name=["']post_id["'][^>]*value=["'](\d+)["']/i)
+    || html.match(/value=["'](\d+)["'][^>]*name=["']post_id["']/i);
+  const refererMatch = html.match(/name=["']_wp_http_referer["'][^>]*value=["']([^"']+)["']/i)
+    || html.match(/value=["']([^"']+)["'][^>]*name=["']_wp_http_referer["']/i);
+
+  const postId = postIdMatch ? postIdMatch[1] : null;
+  const wpReferer = refererMatch ? refererMatch[1] : parsedPage.pathname;
+
+  console.log(`[FlareSolverr] Extracted post_id=${postId}, _wp_http_referer=${wpReferer}`);
+
+  // Step 3: Check if the fresh token was already injected into the page HTML
+  // (some pages render the token server-side after JS execution)
+  const tokenInPage = scrapeDownloadUrl(html);
+  if (tokenInPage) {
+    console.log(`[FlareSolverr] Found token URL in page HTML: ${tokenInPage}`);
+    return { url: tokenInPage, cookies, userAgent };
+  }
+
+  // Step 4: POST to admin-ajax.php using the FlareSolverr session cookies
+  const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+  const postBody = new URLSearchParams({ action: 'k_get_download' });
+  if (postId) postBody.set('post_id', postId);
+  if (wpReferer) postBody.set('_wp_http_referer', wpReferer);
+
+  console.log(`[FlareSolverr] POSTing to ${ajaxUrl} with body: ${postBody.toString()}`);
+
+  const ajaxResp = await axios.post(ajaxUrl, postBody.toString(), {
+    timeout: 15000,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Referer': pageUrl,
+      'Origin': `${parsedPage.protocol}//${parsedPage.host}`,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Cookie': cookieHeader,
+    },
+  });
+
+  console.log(`[FlareSolverr] admin-ajax.php response:`, JSON.stringify(ajaxResp.data).slice(0, 300));
+
+  // Response should contain the download link HTML or a URL
+  const ajaxText = typeof ajaxResp.data === 'string' ? ajaxResp.data : JSON.stringify(ajaxResp.data);
+  const tokenUrl = scrapeDownloadUrl(ajaxText);
+  if (tokenUrl) {
+    console.log(`[FlareSolverr] Extracted token URL: ${tokenUrl}`);
+    return { url: tokenUrl, cookies, userAgent };
+  }
+
+  // Try parsing as JSON with a url/link field
+  if (typeof ajaxResp.data === 'object' && (ajaxResp.data.url || ajaxResp.data.link || ajaxResp.data.data)) {
+    const url = ajaxResp.data.url || ajaxResp.data.link || ajaxResp.data.data;
+    if (typeof url === 'string' && url.startsWith('http')) {
+      console.log(`[FlareSolverr] Got URL from JSON response: ${url}`);
+      return { url, cookies, userAgent };
+    }
+  }
+
+  console.warn('[FlareSolverr] Could not extract a download URL from admin-ajax.php response');
+  return null;
 }
 
 
