@@ -34,68 +34,10 @@ async function resolveLink(campaign, ip) {
  */
 async function resolveFollowRedirect(config, ip) {
   if (!config.url) throw new Error('follow_redirect resolver requires config.url');
-
-  let html = null;
-  let finalUrl = config.url;
-  let sessionCookies = [];
-  let sessionUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-
-  // --- Try FlareSolverr first ---
-  try {
-    const response = await axios.post(FLARESOLVERR, {
-      cmd: 'request.get',
-      url: config.url,
-      maxTimeout: 60000,
-      headers: {
-        'X-Forwarded-For': ip,
-        'X-Real-IP': ip,
-        'CF-Connecting-IP': ip,
-      },
-    }, { timeout: 70000 });
-
-    if (response.data && response.data.solution) {
-      html = response.data.solution.response;
-      finalUrl = response.data.solution.url || config.url;
-      sessionCookies = response.data.solution.cookies || [];
-      if (response.data.solution.userAgent) {
-        sessionUserAgent = response.data.solution.userAgent;
-      }
-      console.log(`[FlareSolverr] Fetched ${finalUrl} for IP ${ip}, got ${sessionCookies.length} cookies`);
-    }
-  } catch (err) {
-    console.warn(`[FlareSolverr] Failed: ${err.message} — falling back to plain fetch`);
-  }
-
-  // --- Fallback: plain HTTP with IP headers ---
-  if (!html) {
-    try {
-      const res = await axios.get(config.url, {
-        timeout: 15000,
-        maxRedirects: 10,
-        headers: {
-          'User-Agent': sessionUserAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-      });
-      html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-      finalUrl = res.request?.res?.responseUrl || config.url;
-    } catch (err) {
-      console.warn(`[Plain fetch] Failed: ${err.message}`);
-    }
-  }
-
-  // --- Scrape download URL from HTML ---
-  if (html) {
-    const downloadUrl = scrapeDownloadUrl(html, config.scrape_pattern);
-    if (downloadUrl) {
-      console.log(`[Scraper] Found download URL: ${downloadUrl}`);
-      return { url: downloadUrl, cookies: sessionCookies, userAgent: sessionUserAgent };
-    }
-    console.warn('[Scraper] No download URL found in HTML');
-  }
-
-  // --- Last resort: return the final page URL ---
-  return { url: finalUrl, cookies: sessionCookies, userAgent: sessionUserAgent };
+  // Return the source URL directly — the user's own browser will generate
+  // an IP-specific token when they visit the page (server-side generation is
+  // blocked by the target site for datacenter IPs).
+  return { url: config.url, cookies: [], userAgent: null };
 }
 
 
