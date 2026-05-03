@@ -1,7 +1,7 @@
 const axios = require('axios');
-const https = require('https');
-const http = require('http');
 const { URL } = require('url');
+
+const FLARESOLVERR = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1';
 
 async function resolveLink(campaign, ip) {
   let config;
@@ -14,14 +14,10 @@ async function resolveLink(campaign, ip) {
   }
 
   switch (campaign.resolver_type) {
-    case 'follow_redirect':
-      return resolveFollowRedirect(config, ip);
-    case 'url_template':
-      return resolveUrlTemplate(config, ip);
-    case 'api_fetch':
-      return resolveApiFetch(config, ip);
-    case 'regex_scrape':
-      return resolveRegexScrape(config, ip);
+    case 'follow_redirect': return resolveFollowRedirect(config, ip);
+    case 'url_template':    return resolveUrlTemplate(config, ip);
+    case 'api_fetch':       return resolveApiFetch(config, ip);
+    case 'regex_scrape':    return resolveRegexScrape(config, ip);
     case 'static':
       if (!config.url) throw new Error('static resolver requires config.url');
       return config.url;
@@ -33,51 +29,79 @@ async function resolveLink(campaign, ip) {
 async function resolveFollowRedirect(config, ip) {
   if (!config.url) throw new Error('follow_redirect resolver requires config.url');
 
-  const MAX_REDIRECTS = 12;
-  let currentUrl = config.url;
+  let html = null;
+  let finalUrl = config.url;
 
-  for (let i = 0; i < MAX_REDIRECTS; i++) {
-    const parsed = new URL(currentUrl);
-    const client = parsed.protocol === 'https:' ? https : http;
+  // --- Try FlareSolverr first ---
+  try {
+    const response = await axios.post(FLARESOLVERR, {
+      cmd: 'request.get',
+      url: config.url,
+      maxTimeout: 60000,
+      headers: {
+        'X-Forwarded-For': ip,
+        'X-Real-IP': ip,
+      },
+    }, { timeout: 70000 });
 
-    const location = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-        path: parsed.pathname + parsed.search,
-        method: 'GET',
+    if (response.data && response.data.solution) {
+      html = response.data.solution.response;
+      finalUrl = response.data.solution.url || config.url;
+      console.log(`[FlareSolverr] Fetched ${finalUrl} for IP ${ip}`);
+    }
+  } catch (err) {
+    console.warn(`[FlareSolverr] Failed: ${err.message} — falling back to plain fetch`);
+  }
+
+  // --- Fallback: plain HTTP with IP headers ---
+  if (!html) {
+    try {
+      const res = await axios.get(config.url, {
+        timeout: 15000,
+        maxRedirects: 10,
         headers: {
           'X-Forwarded-For': ip,
           'X-Real-IP': ip,
           'CF-Connecting-IP': ip,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Referer': `${parsed.protocol}//${parsed.hostname}/`,
         },
-      };
-
-      const req = client.request(options, (res) => {
-        res.resume();
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          const loc = res.headers.location;
-          const next = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href;
-          resolve(next);
-        } else {
-          resolve(null);
-        }
       });
-
-      req.on('error', reject);
-      req.setTimeout(12000, () => { req.destroy(); reject(new Error('Request timed out')); });
-      req.end();
-    });
-
-    if (!location) break;
-    currentUrl = location;
+      html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+      finalUrl = res.request?.res?.responseUrl || config.url;
+    } catch (err) {
+      console.warn(`[Plain fetch] Failed: ${err.message}`);
+    }
   }
 
-  return currentUrl;
+  // --- Scrape download URL from HTML ---
+  if (html) {
+    const downloadUrl = scrapeDownloadUrl(html, config.scrape_pattern);
+    if (downloadUrl) {
+      console.log(`[Scraper] Found download URL: ${downloadUrl}`);
+      return downloadUrl;
+    }
+    console.warn('[Scraper] No download URL found in HTML');
+  }
+
+  return finalUrl;
+}
+
+const DOWNLOAD_PATTERNS = [
+  /https?:\/\/[^\s"'<>]+\.(?:zip|iso|rar|7z|exe|pkg|xci|nsp|apk|bin|img)(?:\?[^\s"'<>]*)?/gi,
+];
+
+function scrapeDownloadUrl(html, customPattern) {
+  if (customPattern) {
+    const m = html.match(new RegExp(customPattern));
+    if (m) return m[1] || m[0];
+  }
+  for (const pattern of DOWNLOAD_PATTERNS) {
+    pattern.lastIndex = 0;
+    const m = pattern.exec(html);
+    if (m) return m[0].replace(/['">,\s]+$/, '');
+  }
+  return null;
 }
 
 function resolveUrlTemplate(config, ip) {
@@ -108,8 +132,12 @@ async function resolveRegexScrape(config, ip) {
   if (!config.url || !config.regex) throw new Error('regex_scrape resolver requires config.url and config.regex');
   const url = config.url.replace(/\{ip\}/g, encodeURIComponent(ip));
   const response = await axios.get(url, {
-    timeout: 10000,
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+    timeout: 12000,
+    headers: {
+      'X-Forwarded-For': ip,
+      'X-Real-IP': ip,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
   });
   const html = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
   const match = html.match(new RegExp(config.regex));
