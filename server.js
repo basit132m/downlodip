@@ -63,10 +63,8 @@ app.get('/r/:slug', redirectLimiter, async (req, res) => {
     const result = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, result.url);
 
-    // For follow_redirect, proxy the download through our server so
-    // the request to the file host comes from our VPS IP (matching the token)
     if (campaign.resolver_type === 'follow_redirect') {
-      return proxyDownload(result.url, req, res, result.cookies, result.userAgent);
+      return res.redirect(302, result.url);
     }
 
     return res.redirect(302, result.url);
@@ -146,9 +144,8 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
     const result = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, result.url);
 
-    // For follow_redirect, return a proxy URL instead of the raw token URL
     if (campaign.resolver_type === 'follow_redirect') {
-      return res.json({ url: `/proxy?u=${encodeURIComponent(result.url)}&ck=${encodeURIComponent(JSON.stringify(result.cookies))}&ua=${encodeURIComponent(result.userAgent || '')}` });
+      return res.json({ url: result.url });
     }
 
     return res.json({ url: result.url });
