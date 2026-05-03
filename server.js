@@ -60,16 +60,16 @@ app.get('/r/:slug', redirectLimiter, async (req, res) => {
   }
 
   try {
-    const resolvedUrl = await resolveLink(campaign, ip);
-    db.markResolved(campaign.id, ip, resolvedUrl);
+    const result = await resolveLink(campaign, ip);
+    db.markResolved(campaign.id, ip, result.url);
 
     // For follow_redirect, proxy the download through our server so
     // the request to the file host comes from our VPS IP (matching the token)
     if (campaign.resolver_type === 'follow_redirect') {
-      return proxyDownload(resolvedUrl, req, res);
+      return proxyDownload(result.url, req, res, result.cookies, result.userAgent);
     }
 
-    return res.redirect(302, resolvedUrl);
+    return res.redirect(302, result.url);
   } catch (err) {
     console.error('Resolution failed:', err.message);
     return res.render('lander', { campaign, slug, error: 'Link generation failed, please try again.' });
@@ -77,17 +77,26 @@ app.get('/r/:slug', redirectLimiter, async (req, res) => {
 });
 
 // ── Download proxy ──────────────────────────────────────────────────────────
-async function proxyDownload(fileUrl, req, res) {
+async function proxyDownload(fileUrl, req, res, sessionCookies, sessionUserAgent) {
   try {
+    const cookieHeader = Array.isArray(sessionCookies) && sessionCookies.length > 0
+      ? sessionCookies.map(c => `${c.name}=${c.value}`).join('; ')
+      : '';
+    const ua = sessionUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+    const reqHeaders = {
+      'User-Agent': ua,
+      'Referer': new URL(fileUrl).origin,
+      'Accept': '*/*',
+    };
+    if (cookieHeader) reqHeaders['Cookie'] = cookieHeader;
+
     const upstream = await axios({
       method: 'GET',
       url: fileUrl,
       responseType: 'stream',
       timeout: 30000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': new URL(fileUrl).origin,
-      },
+      headers: reqHeaders,
     });
 
     // Forward content headers so browser treats it as a download
@@ -132,15 +141,15 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
 
   const ip = getClientIp(req);
   try {
-    const resolvedUrl = await resolveLink(campaign, ip);
-    db.markResolved(campaign.id, ip, resolvedUrl);
+    const result = await resolveLink(campaign, ip);
+    db.markResolved(campaign.id, ip, result.url);
 
     // For follow_redirect, return a proxy URL instead of the raw token URL
     if (campaign.resolver_type === 'follow_redirect') {
-      return res.json({ url: `/proxy?u=${encodeURIComponent(resolvedUrl)}` });
+      return res.json({ url: `/proxy?u=${encodeURIComponent(result.url)}&ck=${encodeURIComponent(JSON.stringify(result.cookies))}&ua=${encodeURIComponent(result.userAgent || '')}` });
     }
 
-    return res.json({ url: resolvedUrl });
+    return res.json({ url: result.url });
   } catch (err) {
     console.error('Resolution failed:', err.message);
     return res.status(500).json({ error: 'Could not generate link. Try again.' });
@@ -152,7 +161,11 @@ app.get('/proxy', redirectLimiter, async (req, res) => {
   const fileUrl = req.query.u;
   if (!fileUrl) return res.status(400).send('Missing URL');
   try { new URL(fileUrl); } catch { return res.status(400).send('Invalid URL'); }
-  return proxyDownload(fileUrl, req, res);
+  let cookies = [];
+  let ua = null;
+  try { if (req.query.ck) cookies = JSON.parse(req.query.ck); } catch {}
+  if (req.query.ua) ua = req.query.ua;
+  return proxyDownload(fileUrl, req, res, cookies, ua);
 });
 
 // ── Admin login ─────────────────────────────────────────────────────────────

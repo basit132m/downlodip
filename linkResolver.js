@@ -15,12 +15,12 @@ async function resolveLink(campaign, ip) {
 
   switch (campaign.resolver_type) {
     case 'follow_redirect': return resolveFollowRedirect(config, ip);
-    case 'url_template':    return resolveUrlTemplate(config, ip);
-    case 'api_fetch':       return resolveApiFetch(config, ip);
-    case 'regex_scrape':    return resolveRegexScrape(config, ip);
+    case 'url_template':    return { url: await resolveUrlTemplate(config, ip), cookies: [], userAgent: null };
+    case 'api_fetch':       return { url: await resolveApiFetch(config, ip), cookies: [], userAgent: null };
+    case 'regex_scrape':    return { url: await resolveRegexScrape(config, ip), cookies: [], userAgent: null };
     case 'static':
       if (!config.url) throw new Error('static resolver requires config.url');
-      return config.url;
+      return { url: config.url, cookies: [], userAgent: null };
     default:
       throw new Error(`Unknown resolver_type: ${campaign.resolver_type}`);
   }
@@ -37,6 +37,8 @@ async function resolveFollowRedirect(config, ip) {
 
   let html = null;
   let finalUrl = config.url;
+  let sessionCookies = [];
+  let sessionUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
   // --- Try FlareSolverr first ---
   try {
@@ -53,7 +55,11 @@ async function resolveFollowRedirect(config, ip) {
     if (response.data && response.data.solution) {
       html = response.data.solution.response;
       finalUrl = response.data.solution.url || config.url;
-      console.log(`[FlareSolverr] Fetched ${finalUrl} for IP ${ip}`);
+      sessionCookies = response.data.solution.cookies || [];
+      if (response.data.solution.userAgent) {
+        sessionUserAgent = response.data.solution.userAgent;
+      }
+      console.log(`[FlareSolverr] Fetched ${finalUrl} for IP ${ip}, got ${sessionCookies.length} cookies`);
     }
   } catch (err) {
     console.warn(`[FlareSolverr] Failed: ${err.message} — falling back to plain fetch`);
@@ -69,7 +75,7 @@ async function resolveFollowRedirect(config, ip) {
           'X-Forwarded-For': ip,
           'X-Real-IP': ip,
           'CF-Connecting-IP': ip,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'User-Agent': sessionUserAgent,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
       });
@@ -85,13 +91,13 @@ async function resolveFollowRedirect(config, ip) {
     const downloadUrl = scrapeDownloadUrl(html, config.scrape_pattern);
     if (downloadUrl) {
       console.log(`[Scraper] Found download URL: ${downloadUrl}`);
-      return downloadUrl;
+      return { url: downloadUrl, cookies: sessionCookies, userAgent: sessionUserAgent };
     }
     console.warn('[Scraper] No download URL found in HTML');
   }
 
   // --- Last resort: return the final page URL ---
-  return finalUrl;
+  return { url: finalUrl, cookies: sessionCookies, userAgent: sessionUserAgent };
 }
 
 // Matches direct file download URLs (.zip, .iso, .rar, etc.) with optional token
