@@ -91,6 +91,7 @@ async function proxyDownload(fileUrl, req, res, sessionCookies, sessionUserAgent
     };
     if (cookieHeader) reqHeaders['Cookie'] = cookieHeader;
 
+    console.log(`[Proxy] Fetching ${fileUrl} with ${cookieHeader ? 'cookies' : 'no cookies'}`);
     const upstream = await axios({
       method: 'GET',
       url: fileUrl,
@@ -99,6 +100,7 @@ async function proxyDownload(fileUrl, req, res, sessionCookies, sessionUserAgent
       headers: reqHeaders,
     });
 
+    console.log(`[Proxy] Upstream responded ${upstream.status} — streaming to client`);
     // Forward content headers so browser treats it as a download
     const contentType = upstream.headers['content-type'] || 'application/octet-stream';
     const contentLength = upstream.headers['content-length'];
