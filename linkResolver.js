@@ -84,13 +84,7 @@ async function resolveFollowRedirect(config, ip) {
     const downloadUrl = scrapeDownloadUrl(html, config.scrape_pattern);
     if (downloadUrl) {
       console.log(`[Scraper] Found download URL: ${downloadUrl}`);
-
-      // Get Cloudflare clearance for the download domain (different from source domain)
-      const downloadCookies = await getClearanceForUrl(downloadUrl, sessionUserAgent);
-      const finalCookies = downloadCookies.length > 0 ? downloadCookies : sessionCookies;
-      console.log(`[FlareSolverr] Download domain cookies: ${finalCookies.length}`);
-
-      return { url: downloadUrl, cookies: finalCookies, userAgent: sessionUserAgent };
+      return { url: downloadUrl, cookies: sessionCookies, userAgent: sessionUserAgent };
     }
     console.warn('[Scraper] No download URL found in HTML');
   }
@@ -99,23 +93,6 @@ async function resolveFollowRedirect(config, ip) {
   return { url: finalUrl, cookies: sessionCookies, userAgent: sessionUserAgent };
 }
 
-async function getClearanceForUrl(fileUrl, userAgent) {
-  try {
-    const origin = new URL(fileUrl).origin;
-    const response = await axios.post(FLARESOLVERR, {
-      cmd: 'request.get',
-      url: origin,
-      maxTimeout: 30000,
-    }, { timeout: 40000 });
-    if (response.data && response.data.solution && response.data.solution.cookies) {
-      console.log(`[FlareSolverr] Got ${response.data.solution.cookies.length} cookies for ${origin}`);
-      return response.data.solution.cookies;
-    }
-  } catch (err) {
-    console.warn(`[FlareSolverr] Clearance fetch for download domain failed: ${err.message}`);
-  }
-  return [];
-}
 
 // Matches direct file download URLs (.zip, .iso, .rar, etc.) with optional token
 const DOWNLOAD_PATTERNS = [
