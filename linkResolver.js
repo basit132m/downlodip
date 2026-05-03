@@ -46,10 +46,6 @@ async function resolveFollowRedirect(config, ip) {
       cmd: 'request.get',
       url: config.url,
       maxTimeout: 60000,
-      headers: {
-        'X-Forwarded-For': ip,
-        'X-Real-IP': ip,
-      },
     }, { timeout: 70000 });
 
     if (response.data && response.data.solution) {
@@ -72,9 +68,6 @@ async function resolveFollowRedirect(config, ip) {
         timeout: 15000,
         maxRedirects: 10,
         headers: {
-          'X-Forwarded-For': ip,
-          'X-Real-IP': ip,
-          'CF-Connecting-IP': ip,
           'User-Agent': sessionUserAgent,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
