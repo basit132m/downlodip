@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const axios = require('axios');
 const db = require('./db');
 const { resolveLink } = require('./linkResolver');
 
@@ -60,12 +61,61 @@ app.get('/r/:slug', redirectLimiter, async (req, res) => {
   try {
     const resolvedUrl = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, resolvedUrl);
+
+    if (campaign.resolver_type === 'follow_redirect') {
+      return proxyDownload(resolvedUrl, req, res);
+    }
+
     return res.redirect(302, resolvedUrl);
   } catch (err) {
     console.error('Resolution failed:', err.message);
     return res.render('lander', { campaign, slug, error: 'Link generation failed, please try again.' });
   }
 });
+
+async function proxyDownload(fileUrl, req, res) {
+  try {
+    const upstream = await axios({
+      method: 'GET',
+      url: fileUrl,
+      responseType: 'stream',
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': new URL(fileUrl).origin,
+      },
+    });
+
+    const contentType = upstream.headers['content-type'] || 'application/octet-stream';
+    const contentLength = upstream.headers['content-length'];
+    const contentDisposition = upstream.headers['content-disposition'];
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (contentDisposition) {
+      res.setHeader('Content-Disposition', contentDisposition);
+    } else {
+      const filename = decodeURIComponent(fileUrl.split('/').pop().split('?')[0]);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    }
+
+    upstream.data.pipe(res);
+    upstream.data.on('error', (err) => {
+      console.error('Proxy stream error:', err.message);
+      if (!res.headersSent) res.status(500).send('Download failed.');
+    });
+
+  } catch (err) {
+    console.error('Proxy download failed:', err.message);
+    if (!res.headersSent) {
+      res.status(502).render('lander', {
+        campaign: { lander_title: 'Download Failed', lander_description: '' },
+        slug: '',
+        error: 'Could not fetch the file. The link may have expired. Please try again.',
+      });
+    }
+  }
+}
 
 app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   const { slug } = req.params;
@@ -76,11 +126,23 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   try {
     const resolvedUrl = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, resolvedUrl);
+
+    if (campaign.resolver_type === 'follow_redirect') {
+      return res.json({ url: `/proxy?u=${encodeURIComponent(resolvedUrl)}` });
+    }
+
     return res.json({ url: resolvedUrl });
   } catch (err) {
     console.error('Resolution failed:', err.message);
     return res.status(500).json({ error: 'Could not generate link. Try again.' });
   }
+});
+
+app.get('/proxy', redirectLimiter, async (req, res) => {
+  const fileUrl = req.query.u;
+  if (!fileUrl) return res.status(400).send('Missing URL');
+  try { new URL(fileUrl); } catch { return res.status(400).send('Invalid URL'); }
+  return proxyDownload(fileUrl, req, res);
 });
 
 app.get('/admin/login', (req, res) => res.render('login', { error: null }));
