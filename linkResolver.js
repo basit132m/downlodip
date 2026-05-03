@@ -1,36 +1,8 @@
 const axios = require('axios');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 
-/**
- * Resolves an IP-specific download/redirect URL based on the campaign's resolver type.
- *
- * Supported resolver types:
- *
- *  1. "url_template"
- *     Replace {ip} in a URL template with the visitor's IP.
- *     config: { "template": "https://example.com/getlink?ip={ip}&token=abc" }
- *
- *  2. "api_fetch"
- *     POST or GET to an API that returns a JSON body containing the link.
- *     config: {
- *       "url": "https://api.example.com/generate",
- *       "method": "POST",           // optional, default GET
- *       "ip_field": "user_ip",      // field name to send the IP as
- *       "response_field": "link",   // JSON field to read the URL from
- *       "extra_params": {}          // optional extra fields merged into request
- *     }
- *
- *  3. "regex_scrape"
- *     Fetch a URL (with {ip} substituted) and extract a link using a regex.
- *     config: {
- *       "url": "https://example.com/page?ip={ip}",
- *       "regex": "href=\"(https://download\\.example\\.com/[^\"]+)\""
- *     }
- *
- *  4. "static"
- *     Always returns the same URL regardless of IP.
- *     Useful for campaigns where the link doesn't need IP binding.
- *     config: { "url": "https://example.com/static-link" }
- */
 async function resolveLink(campaign, ip) {
   let config;
   try {
@@ -42,67 +14,112 @@ async function resolveLink(campaign, ip) {
   }
 
   switch (campaign.resolver_type) {
+    case 'follow_redirect':
+      return resolveFollowRedirect(config, ip);
     case 'url_template':
       return resolveUrlTemplate(config, ip);
-
     case 'api_fetch':
       return resolveApiFetch(config, ip);
-
     case 'regex_scrape':
       return resolveRegexScrape(config, ip);
-
     case 'static':
       if (!config.url) throw new Error('static resolver requires config.url');
       return config.url;
-
     default:
       throw new Error(`Unknown resolver_type: ${campaign.resolver_type}`);
   }
 }
 
+/**
+ * follow_redirect: Visit the source URL with the visitor's IP in headers,
+ * follow all redirects manually, and return the final URL.
+ * This makes romsfun (and similar sites) generate an IP-specific token
+ * for the visitor's IP rather than our server's IP.
+ */
+async function resolveFollowRedirect(config, ip) {
+  if (!config.url) throw new Error('follow_redirect resolver requires config.url');
+
+  const MAX_REDIRECTS = 12;
+  let currentUrl = config.url;
+
+  for (let i = 0; i < MAX_REDIRECTS; i++) {
+    const parsed = new URL(currentUrl);
+    const client = parsed.protocol === 'https:' ? https : http;
+
+    const location = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: parsed.hostname,
+        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        path: parsed.pathname + parsed.search,
+        method: 'GET',
+        headers: {
+          'X-Forwarded-For': ip,
+          'X-Real-IP': ip,
+          'CF-Connecting-IP': ip,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': `${parsed.protocol}//${parsed.hostname}/`,
+        },
+      };
+
+      const req = client.request(options, (res) => {
+        res.resume(); // drain body
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const loc = res.headers.location;
+          // Resolve relative redirects
+          const next = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href;
+          resolve(next);
+        } else {
+          resolve(null); // no more redirects
+        }
+      });
+
+      req.on('error', reject);
+      req.setTimeout(12000, () => { req.destroy(); reject(new Error('Request timed out')); });
+      req.end();
+    });
+
+    if (!location) break; // reached final URL
+    currentUrl = location;
+  }
+
+  return currentUrl;
+}
+
 function resolveUrlTemplate(config, ip) {
   if (!config.template) throw new Error('url_template resolver requires config.template');
-  const url = config.template.replace(/\{ip\}/g, encodeURIComponent(ip));
-  return url;
+  return config.template.replace(/\{ip\}/g, encodeURIComponent(ip));
 }
 
 async function resolveApiFetch(config, ip) {
   if (!config.url) throw new Error('api_fetch resolver requires config.url');
-
   const ipField = config.ip_field || 'ip';
   const responseField = config.response_field || 'url';
   const method = (config.method || 'GET').toUpperCase();
   const extra = config.extra_params || {};
-
   const params = { [ipField]: ip, ...extra };
   const url = config.url.replace(/\{ip\}/g, encodeURIComponent(ip));
-
   let response;
   if (method === 'POST') {
     response = await axios.post(url, params, { timeout: 10000 });
   } else {
     response = await axios.get(url, { params, timeout: 10000 });
   }
-
-  const data = response.data;
-  const resolved = data[responseField];
+  const resolved = response.data[responseField];
   if (!resolved) throw new Error(`Response field "${responseField}" not found in API response`);
   return resolved;
 }
 
 async function resolveRegexScrape(config, ip) {
   if (!config.url || !config.regex) throw new Error('regex_scrape resolver requires config.url and config.regex');
-
   const url = config.url.replace(/\{ip\}/g, encodeURIComponent(ip));
   const response = await axios.get(url, {
     timeout: 10000,
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
   });
-
   const html = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-  const regex = new RegExp(config.regex);
-  const match = html.match(regex);
-
+  const match = html.match(new RegExp(config.regex));
   if (!match || !match[1]) throw new Error('Regex did not match any URL in the response');
   return match[1];
 }
