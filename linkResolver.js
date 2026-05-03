@@ -46,6 +46,11 @@ async function resolveFollowRedirect(config, ip) {
       cmd: 'request.get',
       url: config.url,
       maxTimeout: 60000,
+      headers: {
+        'X-Forwarded-For': ip,
+        'X-Real-IP': ip,
+        'CF-Connecting-IP': ip,
+      },
     }, { timeout: 70000 });
 
     if (response.data && response.data.solution) {
