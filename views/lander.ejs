@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title><%= campaign.lander_title || campaign.name %></title>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body class="lander-page">
+
+<div class="lander-container">
+  <div class="lander-card">
+    <div class="lander-icon">⬇</div>
+    <h1><%= campaign.lander_title || campaign.name %></h1>
+
+    <% if (campaign.lander_description) { %>
+      <p class="lander-desc"><%= campaign.lander_description %></p>
+    <% } %>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert-error"><%= error %></div>
+    <% } %>
+
+    <div id="link-area">
+      <button id="get-link-btn" class="btn-primary btn-large" onclick="getLink()">
+        Get Download Link
+      </button>
+    </div>
+
+    <p class="lander-note">Your link is generated uniquely for your connection.</p>
+  </div>
+</div>
+
+<script>
+  const SLUG = '<%= slug %>';
+
+  async function getLink() {
+    const btn = document.getElementById('get-link-btn');
+    const area = document.getElementById('link-area');
+
+    btn.disabled = true;
+    btn.textContent = 'Generating link…';
+
+    try {
+      const res = await fetch(`/r/${SLUG}/resolve`, { method: 'POST' });
+      const data = await res.json();
+
+      if (data.url) {
+        area.innerHTML = `
+          <a id="download-link" class="btn-primary btn-large" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
+            Click Here to Download
+          </a>
+          <p class="link-url">${escapeHtml(data.url)}</p>
+        `;
+        // Auto-open the link
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+      } else {
+        throw new Error(data.error || 'Unknown error');
+      }
+    } catch (e) {
+      area.innerHTML = `
+        <p class="alert-error">${escapeHtml(e.message)}</p>
+        <button class="btn-primary btn-large" onclick="location.reload()">Try Again</button>
+      `;
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
