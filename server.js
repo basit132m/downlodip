@@ -14,7 +14,6 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-
 app.set('trust proxy', 1);
 
 const redirectLimiter = rateLimit({
@@ -31,15 +30,24 @@ function getClientIp(req) {
 }
 
 function adminAuth(req, res, next) {
-  const secret = req.headers['x-admin-secret'] || req.query.secret || req.body?.secret;
-  if (secret !== ADMIN_SECRET) return res.status(401).json({ error: 'Unauthorized' });
-  next();
+  const cookie = req.headers.cookie || '';
+  const token = cookie.split(';').map(c => c.trim()).find(c => c.startsWith('admin_token='));
+  if (token && token.split('=')[1] === ADMIN_SECRET) return next();
+  const header = req.headers['x-admin-secret'];
+  if (header === ADMIN_SECRET) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+function adminPageAuth(req, res, next) {
+  const cookie = req.headers.cookie || '';
+  const token = cookie.split(';').map(c => c.trim()).find(c => c.startsWith('admin_token='));
+  if (token && token.split('=')[1] === ADMIN_SECRET) return next();
+  return res.redirect('/admin/login');
 }
 
 app.get('/r/:slug', redirectLimiter, async (req, res) => {
   const { slug } = req.params;
   const campaign = db.getCampaign(slug);
-
   if (!campaign) return res.status(404).render('404');
 
   const ip = getClientIp(req);
@@ -65,7 +73,6 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'Not found' });
 
   const ip = getClientIp(req);
-
   try {
     const resolvedUrl = await resolveLink(campaign, ip);
     db.markResolved(campaign.id, ip, resolvedUrl);
@@ -76,9 +83,23 @@ app.post('/r/:slug/resolve', redirectLimiter, async (req, res) => {
   }
 });
 
-app.get('/admin', (req, res) => {
-  res.render('admin', { secret: ADMIN_SECRET });
+app.get('/admin/login', (req, res) => res.render('login', { error: null }));
+
+app.post('/admin/login', (req, res) => {
+  const { secret } = req.body;
+  if (secret === ADMIN_SECRET) {
+    res.setHeader('Set-Cookie', `admin_token=${ADMIN_SECRET}; HttpOnly; Path=/; SameSite=Strict; Max-Age=86400`);
+    return res.redirect('/admin');
+  }
+  res.render('login', { error: 'Wrong password. Try again.' });
 });
+
+app.get('/admin/logout', (req, res) => {
+  res.setHeader('Set-Cookie', 'admin_token=; HttpOnly; Path=/; Max-Age=0');
+  res.redirect('/admin/login');
+});
+
+app.get('/admin', adminPageAuth, (req, res) => res.render('admin'));
 
 app.get('/admin/api/campaigns', adminAuth, (req, res) => {
   res.json(db.getAllCampaigns());
@@ -86,11 +107,9 @@ app.get('/admin/api/campaigns', adminAuth, (req, res) => {
 
 app.post('/admin/api/campaigns', adminAuth, (req, res) => {
   const { name, resolver_type, resolver_config, use_lander, lander_title, lander_description } = req.body;
-
   if (!name || !resolver_type || !resolver_config) {
     return res.status(400).json({ error: 'name, resolver_type, and resolver_config are required' });
   }
-
   const campaign = db.createCampaign({
     name,
     resolver_type,
@@ -99,7 +118,6 @@ app.post('/admin/api/campaigns', adminAuth, (req, res) => {
     lander_title: lander_title || name,
     lander_description: lander_description || '',
   });
-
   res.json(campaign);
 });
 
@@ -121,10 +139,6 @@ app.get('/admin/api/campaigns/:id/stats', adminAuth, (req, res) => {
 db.ready.then(() => {
   app.listen(PORT, () => {
     console.log(`Downlodip running on http://localhost:${PORT}`);
-    console.log(`Admin panel: http://localhost:${PORT}/admin`);
-    console.log(`Admin secret: ${ADMIN_SECRET}`);
+    console.log(`Admin: http://localhost:${PORT}/admin`);
   });
-}).catch(err => {
-  console.error('DB init failed:', err);
-  process.exit(1);
-});
+}).catch(err => { console.error('DB init failed:', err); process.exit(1); });
