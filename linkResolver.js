@@ -1,7 +1,7 @@
-const https = require('https');
-const http = require('http');
-const { URL } = require('url');
 const axios = require('axios');
+const { URL } = require('url');
+
+const FLARESOLVERR = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1';
 
 async function resolveLink(campaign, ip) {
   let config;
@@ -28,100 +28,87 @@ async function resolveLink(campaign, ip) {
 
 /**
  * follow_redirect:
- * 1. Follow HTTP redirects with visitor's IP spoofed in headers.
- * 2. If the final page is HTML (no more redirects), scrape it for a
- *    download URL (.zip / .iso / .rar / .7z / .exe with optional ?token=...).
- * This handles sites like romsfun that embed an IP-locked token URL
- * in the page HTML behind a JS timer.
+ * Uses FlareSolverr to fetch the page through a real stealth browser,
+ * bypassing Cloudflare. Then scrapes the download URL from the HTML.
+ * Falls back to plain HTTP redirect-following if FlareSolverr fails.
  */
 async function resolveFollowRedirect(config, ip) {
   if (!config.url) throw new Error('follow_redirect resolver requires config.url');
 
-  const BROWSER_HEADERS = {
-    'X-Forwarded-For': ip,
-    'X-Real-IP': ip,
-    'CF-Connecting-IP': ip,
-    'True-Client-IP': ip,
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-  };
+  let html = null;
+  let finalUrl = config.url;
 
-  // Step 1: follow HTTP redirects manually
-  const MAX_REDIRECTS = 12;
-  let currentUrl = config.url;
-  let lastBody = null;
-  let lastStatus = null;
+  // --- Try FlareSolverr first ---
+  try {
+    const response = await axios.post(FLARESOLVERR, {
+      cmd: 'request.get',
+      url: config.url,
+      maxTimeout: 60000,
+      headers: {
+        'X-Forwarded-For': ip,
+        'X-Real-IP': ip,
+      },
+    }, { timeout: 70000 });
 
-  for (let i = 0; i < MAX_REDIRECTS; i++) {
-    const parsed = new URL(currentUrl);
-    const client = parsed.protocol === 'https:' ? https : http;
+    if (response.data && response.data.solution) {
+      html = response.data.solution.response;
+      finalUrl = response.data.solution.url || config.url;
+      console.log(`[FlareSolverr] Fetched ${finalUrl} for IP ${ip}`);
+    }
+  } catch (err) {
+    console.warn(`[FlareSolverr] Failed: ${err.message} — falling back to plain fetch`);
+  }
 
-    const { location, status, body } = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-        path: parsed.pathname + parsed.search,
-        method: 'GET',
-        headers: { ...BROWSER_HEADERS, 'Referer': `${parsed.protocol}//${parsed.hostname}/` },
-      };
-
-      let rawBody = '';
-      const req = client.request(options, (res) => {
-        res.setEncoding('utf8');
-        res.on('data', chunk => { if (rawBody.length < 500000) rawBody += chunk; });
-        res.on('end', () => {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            const loc = res.headers.location;
-            const next = loc.startsWith('http') ? loc : new URL(loc, currentUrl).href;
-            resolve({ location: next, status: res.statusCode, body: null });
-          } else {
-            resolve({ location: null, status: res.statusCode, body: rawBody });
-          }
-        });
+  // --- Fallback: plain HTTP with IP headers ---
+  if (!html) {
+    try {
+      const res = await axios.get(config.url, {
+        timeout: 15000,
+        maxRedirects: 10,
+        headers: {
+          'X-Forwarded-For': ip,
+          'X-Real-IP': ip,
+          'CF-Connecting-IP': ip,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
       });
-
-      req.on('error', reject);
-      req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timed out')); });
-      req.end();
-    });
-
-    lastStatus = status;
-    if (!location) { lastBody = body; break; }
-    currentUrl = location;
+      html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+      finalUrl = res.request?.res?.responseUrl || config.url;
+    } catch (err) {
+      console.warn(`[Plain fetch] Failed: ${err.message}`);
+    }
   }
 
-  // Step 2: if we landed on an HTML page, scrape the download URL from it
-  if (lastBody) {
-    const downloadUrl = scrapeDownloadUrl(lastBody, config.scrape_pattern);
-    if (downloadUrl) return downloadUrl;
-    // If nothing found, fall back to returning the final page URL
-    // (at least the user lands on the right page)
+  // --- Scrape download URL from HTML ---
+  if (html) {
+    const downloadUrl = scrapeDownloadUrl(html, config.scrape_pattern);
+    if (downloadUrl) {
+      console.log(`[Scraper] Found download URL: ${downloadUrl}`);
+      return downloadUrl;
+    }
+    console.warn('[Scraper] No download URL found in HTML');
   }
 
-  return currentUrl;
+  // --- Last resort: return the final page URL ---
+  return finalUrl;
 }
 
-// Common file extensions and token patterns to look for
+// Matches direct file download URLs (.zip, .iso, .rar, etc.) with optional token
 const DOWNLOAD_PATTERNS = [
-  // href or src pointing to a file with optional query string
-  /https?:\/\/[^\s"'<>]+\.(?:zip|iso|rar|7z|exe|pkg|xci|nsp|apk|bin|img)[^\s"'<>]*/gi,
+  /https?:\/\/[^\s"'<>]+\.(?:zip|iso|rar|7z|exe|pkg|xci|nsp|apk|bin|img)(?:\?[^\s"'<>]*)?/gi,
 ];
 
 function scrapeDownloadUrl(html, customPattern) {
-  // Try custom pattern first if provided
   if (customPattern) {
     const m = html.match(new RegExp(customPattern));
     if (m) return m[1] || m[0];
   }
-
-  // Try each built-in pattern
   for (const pattern of DOWNLOAD_PATTERNS) {
     pattern.lastIndex = 0;
     const m = pattern.exec(html);
-    if (m) return m[0].replace(/['">\s]+$/, ''); // trim trailing junk
+    if (m) return m[0].replace(/['">\s]+$/, '');
   }
-
   return null;
 }
 
