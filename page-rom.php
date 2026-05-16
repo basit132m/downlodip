@@ -49,6 +49,27 @@ $rom_q = new WP_Query( array(
         </div>
     </div>
 
+    <!-- ── Search bar ── -->
+    <div class="sr-search-wrap">
+      <form class="sr-search-form" action="/" method="get" role="search">
+        <div class="sr-search-inner">
+          <span class="sr-search-icon">&#128269;</span>
+          <input
+            class="sr-search-input"
+            type="search"
+            name="s"
+            placeholder="Search Nintendo Switch ROMs..."
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search Nintendo Switch ROMs"
+          />
+          <button class="sr-search-clear" type="button" aria-label="Clear search">&#10005;</button>
+          <button class="sr-search-btn" type="submit" aria-label="Search">Search</button>
+        </div>
+        <div class="sr-live-results" id="srLiveResults"></div>
+      </form>
+    </div>
+
     <?php if ( $rom_q->have_posts() ) : ?>
 
     <!-- ── ROM container ── -->
@@ -558,6 +579,17 @@ $rom_q = new WP_Query( array(
         }
     }
 })();
+</script>
+
+<!-- ── Search bar CSS ── -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Dosis:wght@400;500;600&display=swap');
+.sr-search-wrap{width:100%;max-width:680px;margin:0 auto 2em auto;font-family:'Dosis',sans-serif;position:relative}.sr-search-form{width:100%;position:relative}.sr-search-inner{display:flex;align-items:center;background:#EFF7F1!important;border:2px solid #FF5F54;border-radius:50px;padding:0 8px 0 18px;gap:8px;transition:border-color 0.25s ease,box-shadow 0.25s ease;position:relative;z-index:101}.sr-search-inner:focus-within{border-color:#FF5F54;box-shadow:0 0 0 4px rgb(255 95 84 / .12)}.sr-search-icon{font-size:1.1rem;color:#FF5F54;flex-shrink:0;line-height:1;transition:color 0.25s ease;user-select:none}.sr-search-inner:focus-within .sr-search-icon{color:#FF5F54}.sr-search-input{flex:1;background:#EFF7F1!important;-webkit-box-shadow:0 0 0 1000px #EFF7F1 inset!important;box-shadow:0 0 0 1000px #EFF7F1 inset!important;border:none!important;outline:none!important;font-family:'Dosis',sans-serif;font-size:1.15rem;font-weight:500;color:#000000!important;padding:14px 0;caret-color:#FF5F54;-webkit-text-fill-color:#000000!important}.sr-search-input::placeholder{color:rgb(0 0 0 / .35)!important;-webkit-text-fill-color:rgb(0 0 0 / .35)!important;font-weight:400}.sr-search-input:focus{background:#EFF7F1!important;-webkit-box-shadow:0 0 0 1000px #EFF7F1 inset!important;box-shadow:0 0 0 1000px #EFF7F1 inset!important;color:#000000!important;-webkit-text-fill-color:#000000!important}.sr-search-input:-webkit-autofill,.sr-search-input:-webkit-autofill:hover,.sr-search-input:-webkit-autofill:focus,.sr-search-input:-webkit-autofill:active{-webkit-box-shadow:0 0 0 1000px #EFF7F1 inset!important;box-shadow:0 0 0 1000px #EFF7F1 inset!important;-webkit-text-fill-color:#000000!important;background:#EFF7F1!important}.sr-search-input::-webkit-search-cancel-button,.sr-search-input::-webkit-search-decoration{-webkit-appearance:none}.sr-search-clear{background:#fff0;border:none;cursor:pointer;color:#FF5F54;font-size:.95rem;display:none;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;flex-shrink:0;line-height:1;transition:color 0.2s ease,background 0.2s ease}.sr-search-clear:hover{color:#000;background:rgb(255 95 84 / .12)}.sr-search-clear.visible{display:flex}.sr-search-btn{background:#FF5F54;color:#fff;border:none;border-radius:50px;font-family:'Dosis',sans-serif;font-size:1rem;font-weight:600;padding:10px 22px;cursor:pointer;flex-shrink:0;letter-spacing:.03em;transition:background 0.2s ease,transform 0.15s ease}.sr-search-btn:hover{background:#01BADD;transform:scale(1.03)}.sr-search-btn:active{transform:scale(.98)}.sr-live-results{display:none;position:absolute;top:calc(100% - 16px);left:0;right:0;background:#fff;border:2px solid #FF5F54;border-top:none;border-radius:0 0 20px 20px;padding:16px 12px 12px 12px;z-index:100;box-shadow:0 12px 32px rgb(255 95 84 / .15);max-height:420px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#FF5F54 #EFF7F1}.sr-live-results::-webkit-scrollbar{width:5px}.sr-live-results::-webkit-scrollbar-track{background:#EFF7F1;border-radius:10px}.sr-live-results::-webkit-scrollbar-thumb{background:#FF5F54;border-radius:10px}.sr-live-results.active{display:block}.sr-result-item{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:10px;text-decoration:none!important;color:#000000!important;transition:background 0.18s ease;cursor:pointer}.sr-result-item:hover{background:#EFF7F1}.sr-result-item+.sr-result-item{border-top:1px solid rgb(255 95 84 / .1)}.sr-result-thumb{width:52px;height:52px;border-radius:8px;object-fit:cover;flex-shrink:0;background:#EFF7F1;border:1px solid rgb(255 95 84 / .15)}.sr-result-thumb-placeholder{width:52px;height:52px;border-radius:8px;background:#EFF7F1;border:1px solid rgb(255 95 84 / .15);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.4rem}.sr-result-title{font-family:'Dosis',sans-serif;font-size:1rem;font-weight:600;color:#000;line-height:1.3;flex:1}.sr-live-loading,.sr-live-empty,.sr-live-viewall{font-family:'Dosis',sans-serif;font-size:.95rem;font-weight:500;text-align:center;padding:12px 0;color:rgb(0 0 0 / .4)}.sr-live-viewall{display:block;margin-top:10px;padding:10px;background:#FF5F54;color:#ffffff!important;border-radius:50px;text-decoration:none!important;font-weight:600;letter-spacing:.03em;transition:background 0.2s ease}.sr-live-viewall:hover{background:#01BADD!important;color:#ffffff!important}@media (max-width:480px){.sr-search-inner{padding:0 6px 0 14px}.sr-search-input{font-size:1rem;padding:12px 0}.sr-search-btn{font-size:.9rem;padding:9px 16px}.sr-result-thumb,.sr-result-thumb-placeholder{width:42px;height:42px}.sr-result-title{font-size:.9rem}}
+</style>
+
+<!-- ── Search bar JS ── -->
+<script>
+(function(){var input=document.querySelector('.sr-search-input');var clearBtn=document.querySelector('.sr-search-clear');var results=document.getElementById('srLiveResults');var debounce=null;var lastQuery='';if(!input||!clearBtn||!results)return;input.addEventListener('input',function(){var q=this.value.trim();clearBtn.classList.toggle('visible',this.value.length>0);clearTimeout(debounce);if(q.length<2){hideResults();return}if(q===lastQuery)return;debounce=setTimeout(function(){fetchResults(q)},350)});clearBtn.addEventListener('click',function(){input.value='';clearBtn.classList.remove('visible');hideResults();input.focus()});document.addEventListener('click',function(e){if(!e.target.closest('.sr-search-wrap')){hideResults()}});input.addEventListener('keydown',function(e){var items=results.querySelectorAll('.sr-result-item');var current=results.querySelector('.sr-result-item.sr-focused');var idx=Array.prototype.indexOf.call(items,current);if(e.key==='ArrowDown'){e.preventDefault();if(idx<items.length-1)setFocus(items,idx+1);}else if(e.key==='ArrowUp'){e.preventDefault();if(idx>0)setFocus(items,idx-1);}else if(e.key==='Enter'&&current){e.preventDefault();window.location.href=current.getAttribute('href')}else if(e.key==='Escape'){hideResults()}});function setFocus(items,idx){items.forEach(function(el){el.classList.remove('sr-focused')});items[idx].classList.add('sr-focused');items[idx].style.background='#EFF7F1'}function fetchResults(q){lastQuery=q;showLoading();var apiUrl='/wp-json/wp/v2/posts?search='+encodeURIComponent(q)+'&per_page=6&_embed=1';fetch(apiUrl).then(function(res){return res.json()}).then(function(posts){renderResults(posts,q)}).catch(function(){hideResults()})}function renderResults(posts,q){results.innerHTML='';if(!posts||posts.length===0){results.innerHTML='<div class="sr-live-empty">No results found for "'+escHtml(q)+'"</div>';results.classList.add('active');return}posts.forEach(function(post){var title=post.title.rendered||'';var link=post.link||'#';var imgUrl='';try{var media=post._embedded['wp:featuredmedia'];if(media&&media[0]&&media[0].source_url){imgUrl=media[0].source_url}}catch(e){}var thumbHtml=imgUrl?'<img class="sr-result-thumb" src="'+imgUrl+'" alt="'+escHtml(title)+'" loading="lazy">':'<div class="sr-result-thumb-placeholder">&#127918;</div>';var item=document.createElement('a');item.className='sr-result-item';item.href=link;item.innerHTML=thumbHtml+'<span class="sr-result-title">'+escHtml(title)+'</span>';results.appendChild(item)});var viewAll=document.createElement('a');viewAll.className='sr-live-viewall';viewAll.href='/?s='+encodeURIComponent(q);viewAll.innerHTML='View all results for "'+escHtml(q)+'" →';results.appendChild(viewAll);results.classList.add('active')}function showLoading(){results.innerHTML='<div class="sr-live-loading">Searching...</div>';results.classList.add('active')}function hideResults(){results.classList.remove('active');results.innerHTML='';lastQuery=''}function escHtml(str){var d=document.createElement('div');d.appendChild(document.createTextNode(str));return d.innerHTML}})()
 </script>
 
 <?php get_footer(); ?>
